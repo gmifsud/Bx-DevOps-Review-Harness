@@ -1,0 +1,6 @@
+{
+  "name": "GD-DevOps-Review-Harness",
+  "description": "AI-powered desktop harness for reviewing Azure DevOps Pull Requests.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
