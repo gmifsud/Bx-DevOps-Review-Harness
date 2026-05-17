@@ -10,7 +10,7 @@ import {
   Search,
   MessageSquare,
   Check,
-  FileDiff,
+  FileCode,
   AlertTriangle,
   X,
   GripVertical,
@@ -27,23 +27,19 @@ import {
 } from "lucide-react";
 import { THEMES, AppTheme } from "./themes";
 
-interface PR {
-  id: number;
-  title: string;
-  author: string;
-  time: string;
-  repositoryId: string;
-}
+import { PullRequest, FileDiff, AIReview } from "../../core/domain/types";
 
 export default function App() {
-  const [prs, setPrs] = useState<PR[]>([]);
-  const [activePR, setActivePR] = useState<PR | null>(null);
-  const [diffs, setDiffs] = useState<any[]>([]);
+  const [prs, setPrs] = useState<PullRequest[]>([]);
+  const [activePR, setActivePR] = useState<PullRequest | null>(null);
+  const [diffs, setDiffs] = useState<FileDiff[]>([]);
   const [loadingPrs, setLoadingPrs] = useState(false);
   const [loadingDiff, setLoadingDiff] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showConfig, setShowConfig] = useState(false);
   const [currentTheme, setCurrentTheme] = useState<AppTheme>(THEMES[0]);
+  const [aiReview, setAiReview] = useState<AIReview | null>(null);
+  const [generatingReview, setGeneratingReview] = useState(false);
 
   const [sidebarWidth, setSidebarWidth] = useState(250);
   const [sidebarDock, setSidebarDock] = useState<"left" | "right">("left");
@@ -58,6 +54,22 @@ export default function App() {
   );
   const [diffSearchQuery, setDiffSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"unified" | "split">("unified");
+
+  const handleGenerateReview = async () => {
+    if (!activePR || filteredDiffs.length === 0) return;
+    try {
+      setGeneratingReview(true);
+      if (!(window as any).electronAPI) {
+         throw new Error("Electron API not found.");
+      }
+      const review = await (window as any).electronAPI.generateAIReview(filteredDiffs);
+      setAiReview(review);
+    } catch (err: any) {
+      console.error("AI Review error:", err);
+    } finally {
+      setGeneratingReview(false);
+    }
+  };
 
   const toggleCollapse = (filePath: string) => {
     setCollapsedFiles((prev) => {
@@ -129,14 +141,12 @@ export default function App() {
       try {
         setLoadingPrs(true);
         setError(null);
-        const res = await fetch("/api/prs");
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error || `Server error: ${res.status}`);
+        if (!(window as any).electronAPI) {
+          throw new Error("Electron API not found. Please run this app in the Electron environment.");
         }
-        const data = await res.json();
-        setPrs(data.prs || []);
-        if (data.prs?.length > 0) setActivePR(data.prs[0]);
+        const activePrs = await (window as any).electronAPI.getPullRequests();
+        setPrs(activePrs || []);
+        if (activePrs?.length > 0) setActivePR(activePrs[0]);
       } catch (err: any) {
         setError(
           typeof err === "string" ? err : err.message || "Failed to fetch PRs",
@@ -153,12 +163,11 @@ export default function App() {
       if (!activePR) return;
       try {
         setLoadingDiff(true);
-        const res = await fetch(
-          `/api/prs/${activePR.repositoryId}/${activePR.id}/diff`,
-        );
-        if (!res.ok) throw new Error(await res.text());
-        const data = await res.json();
-        setDiffs(data.diff || []);
+        if (!(window as any).electronAPI) {
+           throw new Error("Electron API not found.");
+        }
+        const fileChanges = await (window as any).electronAPI.getDiffs(activePR.repositoryId, activePR.id);
+        setDiffs(fileChanges || []);
       } catch (err: any) {
         console.error("Diff error:", err);
       } finally {
@@ -391,7 +400,7 @@ export default function App() {
                         <span
                           className={`text-[12px] font-mono text-foreground flex items-center gap-2 ${isDisregarded ? "line-through" : ""}`}
                         >
-                          <FileDiff className="w-3.5 h-3.5 text-muted-foreground" />
+                          <FileCode className="w-3.5 h-3.5 text-muted-foreground" />
                           {fileDiff.filePath}
                         </span>
                       </div>
@@ -643,17 +652,32 @@ export default function App() {
               </div>
             )}
           </div>
-          {diffs.length > 0 && diffs[0].filePath.includes("ts") && (
+          
+          {generatingReview && (
+             <div className="p-4 text-center text-muted-foreground text-[11px] font-mono animate-pulse">
+                Generating Review...
+             </div>
+          )}
+
+          {aiReview && !generatingReview && (
+            <div className={`bg-background border border-border rounded-md p-3 ${aiReview.status === 'approved' ? 'border-primary/50' : 'border-destructive/50'}`}>
+              <div className="text-[10px] text-muted-foreground font-mono uppercase mb-2 tracking-[0.05em] flex justify-between">
+                <span>Findings</span>
+                <span className={aiReview.status === 'approved' ? 'text-primary' : 'text-destructive uppercase'}>{aiReview.status}</span>
+              </div>
+              <div className="text-[13px] leading-[1.4] mb-3 text-foreground whitespace-pre-wrap">
+                {aiReview.comments}
+              </div>
+            </div>
+          )}
+
+          {!aiReview && !generatingReview && diffs.length > 0 && diffs[0].filePath.includes("ts") && (
             <div className="bg-background border border-border rounded-md p-3">
               <div className="text-[10px] text-muted-foreground font-mono uppercase mb-2 tracking-[0.05em]">
-                Automated Finding
+                Ready for Review
               </div>
               <div className="text-[13px] leading-[1.4] mb-3 text-foreground">
-                Potential vulnerability or style issue detected in modified
-                TypeScript file.
-              </div>
-              <div className="bg-card p-2 rounded-md border border-border text-[11px] font-mono text-muted-foreground mt-2">
-                <div>// Consider refactoring this block</div>
+                Click below to generate an AI review using Gemini 2.5 Pro.
               </div>
             </div>
           )}
@@ -661,10 +685,11 @@ export default function App() {
 
         <div className="mt-auto pt-4 border-t border-border mt-4">
           <button
+            onClick={handleGenerateReview}
             className="w-full bg-primary hover:bg-primary text-primary-foreground hover:text-foreground border border-accent hover:border-border py-2.5 px-4 rounded-md font-semibold text-[13px] transition-colors text-center disabled:opacity-50 disabled:bg-card disabled:text-muted-foreground disabled:border-border"
-            disabled={!activePR || diffs.length === 0}
+            disabled={!activePR || diffs.length === 0 || generatingReview}
           >
-            Submit AI Review
+            {generatingReview ? "Reviewing..." : "Submit AI Review"}
           </button>
 
           <div className="mt-5 text-[11px] text-muted-foreground font-mono flex items-center gap-3">
