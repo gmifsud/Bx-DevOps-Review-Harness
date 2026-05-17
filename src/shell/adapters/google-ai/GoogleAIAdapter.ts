@@ -20,7 +20,14 @@ Identify any bugs, code smells, or areas for improvement.
 Format your response as a JSON object with the following schema:
 {
   "status": "approved" | "rejected",
-  "comments": "string containing your review comments"
+  "comments": "string containing your review comments",
+  "suggestedFixes": [
+    {
+      "filePath": "string",
+      "newContent": "complete new replacement content for the file",
+      "commitMessage": "string describing the fix"
+    }
+  ]
 }
 
 Code Diff:
@@ -44,7 +51,8 @@ ${diffText}`;
             return {
                 id: Math.random().toString(36).substring(7),
                 status: parsed.status === "approved" ? "approved" : "rejected",
-                comments: parsed.comments || "No comments."
+                comments: parsed.comments || "No comments.",
+                suggestedFixes: parsed.suggestedFixes || []
             };
         } catch (error: any) {
             console.error("Error generating AI review:", error);

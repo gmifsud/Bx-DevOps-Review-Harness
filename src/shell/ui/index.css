@@ -243,10 +243,50 @@ body {
   --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
 }
 
+@layer utilities {
+  .bg-diff-pattern-add {
+    background-image: repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 10px,
+      rgba(16, 185, 129, 0.05) 10px,
+      rgba(16, 185, 129, 0.05) 20px
+    );
+  }
+  .bg-diff-pattern-sub {
+    background-image: repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 10px,
+      rgba(244, 63, 94, 0.05) 10px,
+      rgba(244, 63, 94, 0.05) 20px
+    );
+  }
+  .dark .bg-diff-pattern-add {
+    background-image: repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 10px,
+      rgba(16, 185, 129, 0.1) 10px,
+      rgba(16, 185, 129, 0.1) 20px
+    );
+  }
+  .dark .bg-diff-pattern-sub {
+    background-image: repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 10px,
+      rgba(244, 63, 94, 0.1) 10px,
+      rgba(244, 63, 94, 0.1) 20px
+    );
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground;
     letter-spacing: var(--tracking-normal);
