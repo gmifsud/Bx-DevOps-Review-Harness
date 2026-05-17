@@ -26,4 +26,5 @@ export interface SuggestedFix {
   searchBlock: string;
   replaceBlock: string;
   commitMessage: string;
+  status?: "PENDING" | "APPLIED";
 }

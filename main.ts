@@ -5,8 +5,12 @@ import { AzureDevOpsAdapter } from './src/shell/adapters/azure-devops/AzureDevOp
 import { GoogleAIAdapter } from './src/shell/adapters/google-ai/GoogleAIAdapter';
 import { ReviewOrchestrator } from './src/core/use-cases/ReviewOrchestrator';
 import { ApplyFixUseCase } from './src/core/use-cases/ApplyFixUseCase';
+import { ApplyFixBatchUseCase } from './src/core/use-cases/ApplyFixBatchUseCase';
+import { FixPatcher } from './src/core/services/FixPatcher';
+import { CompletePullRequestUseCase } from './src/core/use-cases/CompletePullRequestUseCase';
 import { FileDiff } from './src/core/domain/types';
 import * as dotenv from 'dotenv';
+
 
 dotenv.config();
 
@@ -56,9 +60,39 @@ app.whenReady().then(() => {
 
   // Inside app.whenReady...
   const applyFixUseCase = new ApplyFixUseCase(azureDevOpsAdapter);
+  const applyFixBatchUseCase = new ApplyFixBatchUseCase(azureDevOpsAdapter);
+  const completePRUseCase = new CompletePullRequestUseCase(azureDevOpsAdapter);
+  const fixPatcher = new FixPatcher();
 
   ipcMain.handle('apply-fix', async (event, repoId: string, sourceBranch: string, filePath: string, searchBlock: string, replaceBlock: string, commitMessage: string) => {
      return applyFixUseCase.execute(repoId, sourceBranch, { filePath, searchBlock, replaceBlock, commitMessage });
+  });
+
+  ipcMain.handle('apply-fix-batch', async (event, repoId: string, sourceBranch: string, fixes: any[]) => {
+     return applyFixBatchUseCase.execute(repoId, sourceBranch, fixes);
+  });
+
+  ipcMain.handle('dry-run-fix', async (event, repoId: string, sourceBranch: string, filePath: string, searchBlock: string, replaceBlock: string) => {
+     try {
+         const { content } = await azureDevOpsAdapter.getFileContent(repoId, filePath, sourceBranch);
+         const fix = { filePath, searchBlock, replaceBlock, commitMessage: '' };
+         return fixPatcher.dryRun(fix, content);
+     } catch (e) {
+         console.error('Dry run failed', e);
+         return { tier: 'T3_Reject', reason: 'Failed to fetch file context' };
+     }
+  });
+
+  ipcMain.handle('get-pr-policies', async (event, repoId: string, prId: number) => {
+     return azureDevOpsAdapter.getPullRequestPolicyStatus(repoId, prId);
+  });
+
+  ipcMain.handle('vote-pr', async (event, repoId: string, prId: number, vote: number) => {
+     return azureDevOpsAdapter.setReviewerVote(repoId, prId, vote);
+  });
+
+  ipcMain.handle('complete-pr', async (event, repoId: string, prId: number, confirmation: { engineerDisplayName: string, timestampUtc: string }) => {
+     return completePRUseCase.execute(repoId, prId, confirmation);
   });
 
   createWindow();

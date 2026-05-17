@@ -18,3 +18,24 @@ export class ConfigError extends DomainError {
     this.name = 'ConfigError';
   }
 }
+
+export class AmbiguousMatchError extends DomainError {
+  constructor(message: string) {
+    super('AMBIGUOUS_MATCH_ERROR', message);
+    this.name = 'AmbiguousMatchError';
+  }
+}
+
+export class MergeError extends DomainError {
+  constructor(message: string) {
+    super('MERGE_ERROR', message);
+    this.name = 'MergeError';
+  }
+}
+
+export class PatchNotFoundError extends DomainError {
+  constructor(message: string) {
+    super('PATCH_NOT_FOUND_ERROR', message);
+    this.name = 'PatchNotFoundError';
+  }
+}

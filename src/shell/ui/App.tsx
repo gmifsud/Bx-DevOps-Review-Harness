@@ -68,16 +68,65 @@ export default function App() {
       }
       await (window as any).electronAPI.applyFix(activePR.repositoryId, activePR.sourceBranch, filePath, searchBlock, replaceBlock, commitMessage);
       
-      setLoadingDiff(true);
-      const fileChanges = await (window as any).electronAPI.getDiffs(activePR.repositoryId, activePR.id);
-      setDiffs(fileChanges || []);
-      
-      setAiReview(null);
+      setAiReview((prev) => {
+          if (!prev) return prev;
+          return {
+              ...prev,
+              suggestedFixes: prev.suggestedFixes?.map(f => {
+                  if (f.filePath === filePath && f.searchBlock === searchBlock) {
+                      return { ...f, status: "APPLIED" };
+                  }
+                  return f;
+              })
+          };
+      });
     } catch (err: any) {
       console.error("Apply Fix error:", err);
     } finally {
       setApplyingFix(false);
-      setLoadingDiff(false);
+    }
+  };
+
+  const handleUpdateFix = (updatedFix: any) => {
+    setAiReview((prev) => {
+       if (!prev) return prev;
+       return {
+          ...prev,
+          suggestedFixes: prev.suggestedFixes?.map(f => {
+              if (f.filePath === updatedFix.filePath && f.searchBlock === updatedFix.searchBlock) {
+                  return updatedFix;
+              }
+              return f;
+          })
+       };
+    });
+  };
+
+  const handleBulkApply = async (fixes: any[]) => {
+    if (!activePR || fixes.length === 0) return;
+    try {
+      setApplyingFix(true);
+      if (!(window as any).electronAPI) {
+         throw new Error("Electron API not found.");
+      }
+      await (window as any).electronAPI.applyFixBatch(activePR.repositoryId, activePR.sourceBranch, fixes);
+      
+      setAiReview((prev) => {
+          if (!prev) return prev;
+          return {
+              ...prev,
+              suggestedFixes: prev.suggestedFixes?.map(f => {
+                  if (fixes.some(fix => fix.filePath === f.filePath && fix.searchBlock === f.searchBlock)) {
+                      return { ...f, status: "APPLIED" };
+                  }
+                  return f;
+              })
+          };
+      });
+    } catch (err: any) {
+      console.error("Bulk Apply Fix error:", err);
+    } finally {
+      setApplyingFix(false);
     }
   };
 
@@ -223,6 +272,8 @@ export default function App() {
         applyingFix={applyingFix}
         handleGenerateReview={handleGenerateReview}
         handleApplyFix={handleApplyFix}
+        handleBulkApply={handleBulkApply}
+        handleUpdateFix={handleUpdateFix}
       />
 
       <ConfigModal

@@ -1,21 +1,20 @@
 import { IPullRequestProvider, FileCommitDetails } from '../ports/IPullRequestProvider';
 import { SuggestedFix } from '../domain/types';
+import { FixPatcher } from '../services/FixPatcher';
 
 export class ApplyFixUseCase {
-    constructor(private prProvider: IPullRequestProvider) {}
+    private fixPatcher: FixPatcher;
+
+    constructor(private prProvider: IPullRequestProvider) {
+        this.fixPatcher = new FixPatcher();
+    }
 
     async execute(repoId: string, branchName: string, fix: SuggestedFix): Promise<boolean> {
         // 1. Fetch the absolute latest state of the file
-        const currentFileContent = await this.prProvider.getFileContent(repoId, fix.filePath, branchName);
+        const { content: currentFileContent, branchSha } = await this.prProvider.getFileContent(repoId, fix.filePath, branchName);
 
-        // 2. Perform the patch (Pure Logic)
-        if (!currentFileContent.includes(fix.searchBlock)) {
-            // The AI hallucinated the search block, or the file changed. 
-            // In a mature app, you'd use a fuzzy match or Levenshtein distance here.
-            throw new Error("Could not find the exact code block to replace. The file may have changed.");
-        }
-
-        const patchedContent = currentFileContent.replace(fix.searchBlock, fix.replaceBlock);
+        // 2. Perform the patch via the Patcher (Pure Logic)
+        const patchedContent = this.fixPatcher.apply(fix, currentFileContent);
 
         // 3. Prepare the commit details
         const commitDetails: FileCommitDetails[] = [{
@@ -25,6 +24,6 @@ export class ApplyFixUseCase {
         }];
 
         // 4. Send to the imperative shell to mutate state
-        return this.prProvider.commitChanges(repoId, branchName, commitDetails, fix.commitMessage);
+        return this.prProvider.commitChanges(repoId, branchName, branchSha, commitDetails, fix.commitMessage);
     }
 }

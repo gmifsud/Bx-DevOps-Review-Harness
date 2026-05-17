@@ -9,7 +9,9 @@
     "build": "vite build && esbuild main.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/main.cjs && esbuild preload.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/preload.cjs",
     "start": "electron dist/main.cjs",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit && eslint ."
+    "lint": "tsc --noEmit && eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
@@ -22,8 +24,8 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "diff": "^9.0.0",
+    "diff-match-patch": "^1.0.5",
     "dotenv": "^17.2.3",
-    "express": "^4.21.2",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "react": "^19.0.0",
@@ -35,7 +37,7 @@
   },
   "devDependencies": {
     "@types/diff": "^7.0.2",
-    "@types/express": "^4.17.21",
+    "@types/diff-match-patch": "^1.0.36",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
     "electron": "^42.1.0",
@@ -43,6 +45,7 @@
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "vite": "^6.2.0",
+    "vitest": "^4.1.6"
   }
 }

@@ -12,7 +12,8 @@ export class AzureDevOpsAdapter implements IPullRequestProvider {
   constructor(
     private orgUrl: string,
     private project: string,
-    private pat: string
+    private pat: string,
+    private maxFilesPerReview?: number
   ) {}
 
   private async getApi(): Promise<GitApi.IGitApi> {
@@ -32,7 +33,7 @@ export class AzureDevOpsAdapter implements IPullRequestProvider {
     }
   }
 
-  async getFileContent(repoId: string, filePath: string, branchOrCommit: string): Promise<string> {
+  async getFileContent(repoId: string, filePath: string, branchOrCommit: string): Promise<{ content: string; objectId: string; branchSha: string }> {
     const gitApi = await this.getApi();
 
     if (!this.project) {
@@ -40,57 +41,43 @@ export class AzureDevOpsAdapter implements IPullRequestProvider {
     }
     
     // Convert a branch name like "feature/auth" to an ADO version descriptor
+    const versionFullName = branchOrCommit.startsWith('refs/') ? branchOrCommit : `refs/heads/${branchOrCommit}`;
+    const versionName = versionFullName.replace('refs/heads/', '');
+    
     const versionDescriptor = {
-        version: branchOrCommit.replace('refs/heads/', ''),
+        version: versionName,
         versionType: 0 // 0 = Branch, 1 = Tag, 2 = Commit
     };
 
     try {
-        const stream = await gitApi.getItemText(
+        const branchRef = await gitApi.getRefs(repoId, this.project, versionName);
+        const branchSha = branchRef && branchRef.length > 0 ? branchRef[0].objectId! : '';
+
+        const item = await gitApi.getItem(
             repoId,
             filePath,
             this.project,
             undefined, // scopePath
             undefined, // recursionLevel
-            undefined, // includeContentMetadata
+            true, // includeContentMetadata
             undefined, // latestProcessedChange
             undefined, // download
-            versionDescriptor as any
+            versionDescriptor as any,
+            true // includeContent
         );
         
-        if (typeof stream === 'string') {
-          return stream;
-        } else if (stream && (stream as any).read) {
-          // Read the stream into a string
-          return await new Promise<string>((resolve, reject) => {
-              let content = '';
-              (stream as any).on('data', (chunk: any) => content += chunk);
-              (stream as any).on('end', () => resolve(content));
-              (stream as any).on('error', reject);
-          });
-        }
-        return "";
+        return {
+          content: item?.content || "",
+          objectId: item?.objectId || "",
+          branchSha
+        };
     } catch (error: any) {
         console.error(`Failed to fetch ${filePath}:`, error);
         throw new NetworkError(`Failed to fetch file content: ${error.message}`);
     }
   }
 
-  async getRepositoryTree(repoId: string, branchName: string): Promise<string[]> {
-      const gitApi = await this.getApi();
-      if (!this.project) {
-        throw new ConfigError("Missing AZURE_DEVOPS_PROJECT.");
-      }
-      try {
-        const items = await gitApi.getItems(repoId, this.project, undefined, undefined, undefined, true, undefined, undefined, { version: branchName.replace('refs/heads/', ''), versionType: 0 });
-        return items.filter(item => !item.isFolder && item.path).map(item => item.path!);
-      } catch (e: any) {
-         console.error("Failed to fetch repository tree:", e);
-         throw new NetworkError(`Failed to fetch tree: ${e.message}`);
-      }
-  }
-
-  async commitChanges(repoId: string, sourceBranch: string, changes: FileCommitDetails[], commitMessage: string): Promise<boolean> {
+  async commitChanges(repoId: string, sourceBranch: string, expectedOldObjectId: string, changes: FileCommitDetails[], commitMessage: string): Promise<boolean> {
     const gitApi = await this.getApi();
     
     if (!this.project) {
@@ -98,11 +85,6 @@ export class AzureDevOpsAdapter implements IPullRequestProvider {
     }
 
     try {
-        // 1. We need the current objectId of the branch we are pushing to
-        const branchRef = await gitApi.getRefs(repoId, this.project, sourceBranch.replace('refs/', ''));
-        if (!branchRef || branchRef.length === 0) throw new Error("Branch not found");
-        const oldObjectId = branchRef[0].objectId;
-
         // 2. Map our Domain changes to ADO's GitChange interface
         const adoChanges = changes.map(c => ({
             changeType: c.changeType === 'edit' ? 2 : c.changeType === 'add' ? 1 : 16, // 1: Add, 2: Edit, 16: Delete
@@ -114,7 +96,7 @@ export class AzureDevOpsAdapter implements IPullRequestProvider {
         const push: GitPush = {
             refUpdates: [{
                 name: sourceBranch.startsWith('refs/') ? sourceBranch : `refs/heads/${sourceBranch}`,
-                oldObjectId: oldObjectId
+                oldObjectId: expectedOldObjectId
             }],
             commits: [{
                 comment: commitMessage,
@@ -191,8 +173,10 @@ export class AzureDevOpsAdapter implements IPullRequestProvider {
         return [];
       }
 
-      // Limit to first 3 files to avoid massive delays in prototype harness
-      const changes = diffsResponse.changes.filter(c => !c.item?.isFolder).slice(0, 3);
+      let changes = diffsResponse.changes.filter(c => !c.item?.isFolder);
+      if (this.maxFilesPerReview !== undefined && this.maxFilesPerReview > 0) {
+        changes = changes.slice(0, this.maxFilesPerReview);
+      }
 
       for (const change of changes) {
         const filePath = change.item?.path;
@@ -235,6 +219,97 @@ export class AzureDevOpsAdapter implements IPullRequestProvider {
       return fileChanges;
     } catch (e: any) {
       throw new NetworkError(`Failed to fetch pull request diffs: ${e.message}`);
+    }
+  }
+
+  async setReviewerVote(repoId: string, prId: number, vote: number): Promise<boolean> {
+    const gitApi = await this.getApi();
+    if (!this.project) {
+        throw new ConfigError("Missing AZURE_DEVOPS_PROJECT.");
+    }
+    try {
+        const authHandler = azdev.getPersonalAccessTokenHandler(this.pat);
+        const connection = new azdev.WebApi(this.orgUrl, authHandler);
+        const connData = await connection.connect();
+        const myId = connData.authenticatedUser?.id;
+        if (!myId) throw new Error("Could not determine authenticated user identity.");
+        
+        await gitApi.createPullRequestReviewer({ vote }, repoId, prId, myId, this.project);
+        return true;
+    } catch (error: any) {
+        console.error("Failed to set reviewer vote:", error);
+        throw new NetworkError(`Failed to set reviewer vote: ${error.message}`);
+    }
+  }
+
+  async completePullRequest(repoId: string, prId: number): Promise<boolean> {
+    const gitApi = await this.getApi();
+    if (!this.project) {
+        throw new ConfigError("Missing AZURE_DEVOPS_PROJECT.");
+    }
+    
+    try {
+        const currentPr = await gitApi.getPullRequest(repoId, prId, this.project);
+        const lastMergeSourceCommit = currentPr.lastMergeSourceCommit?.commitId;
+        if (!lastMergeSourceCommit) throw new Error("Could not determine lastMergeSourceCommit");
+
+        const prToUpdate = {
+            status: 3, // PullRequestStatus.Completed
+            lastMergeSourceCommit: {
+                commitId: lastMergeSourceCommit
+            }
+        };
+        await gitApi.updatePullRequest(prToUpdate, repoId, prId, this.project);
+        return true;
+    } catch (error: any) {
+        console.error("Failed to complete PR:", error);
+        throw new NetworkError(`Failed to complete PR: ${error.message}`);
+    }
+  }
+
+  async getPullRequestPolicyStatus(repoId: string, prId: number): Promise<{ isPassing: boolean; policies: string[]; }> {
+    const gitApi = await this.getApi();
+    if (!this.project) {
+        throw new ConfigError("Missing AZURE_DEVOPS_PROJECT.");
+    }
+    
+    try {
+        const pr = await gitApi.getPullRequest(repoId, prId, this.project);
+        const artifactId = pr.artifactId;
+        if (!artifactId) throw new Error("Could not retrieve PR artifactId.");
+
+        const authHandler = azdev.getPersonalAccessTokenHandler(this.pat);
+        const connection = new azdev.WebApi(this.orgUrl, authHandler);
+        const policyApi = await connection.getPolicyApi();
+
+        const evaluations = await policyApi.getPolicyEvaluations(this.project, artifactId);
+
+        let isPassing = true;
+        const policies: string[] = [];
+
+        for (const evalRecord of evaluations) {
+             const statusValue = evalRecord.status;
+             // 2 = Approved, 4 = NotApplicable
+             if (evalRecord.configuration?.isBlocking) {
+                 if (statusValue !== 2 && statusValue !== 4) {
+                     isPassing = false;
+                 }
+             }
+             let statusString = "Unknown";
+             if (statusValue === 0) statusString = "Queued";
+             if (statusValue === 1) statusString = "Running";
+             if (statusValue === 2) statusString = "Approved";
+             if (statusValue === 3) statusString = "Rejected";
+             if (statusValue === 4) statusString = "NotApplicable";
+             if (statusValue === 5) statusString = "Broken";
+
+             policies.push(`${evalRecord.configuration?.type?.displayName || "Unknown"}: ${statusString}`);
+        }
+
+        return { isPassing, policies };
+    } catch (error: any) {
+        console.error("Failed to fetch policies:", error);
+        throw new NetworkError(`Failed to fetch policies: ${error.message}`);
     }
   }
 }

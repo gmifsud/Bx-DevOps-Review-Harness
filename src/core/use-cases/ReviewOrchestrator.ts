@@ -1,6 +1,7 @@
 import { FileDiff, AIReview } from '../domain/types';
 import { IPullRequestProvider } from '../ports/IPullRequestProvider';
 import { IAIService } from '../ports/IAIService';
+import crypto from 'crypto';
 
 export class ReviewOrchestrator {
     constructor(
@@ -24,6 +25,9 @@ export class ReviewOrchestrator {
         let combinedStatus: "approved" | "rejected" = "approved";
         let combinedComments = "";
         let allFixes: any[] = [];
+        
+        // LRU/Memo map for file contents to avoid redundant network calls.
+        const fileContentCache = new Map<string, string>();
 
         // 3. Process each batch (Map)
         // Note: Running sequentially to respect API rate limits. For enterprise APIs, 
@@ -36,7 +40,13 @@ export class ReviewOrchestrator {
                 let fullFileContent = "";
                 try {
                     if (diff.changeType !== 'delete') {
-                        fullFileContent = await this.prProvider.getFileContent(repoId, diff.filePath, branchName);
+                        if (fileContentCache.has(diff.filePath)) {
+                            fullFileContent = fileContentCache.get(diff.filePath)!;
+                        } else {
+                            const fileInfo = await this.prProvider.getFileContent(repoId, diff.filePath, branchName);
+                            fullFileContent = fileInfo.content;
+                            fileContentCache.set(diff.filePath, fullFileContent);
+                        }
                     }
                 } catch(e) {
                     console.error(`Could not fetch full file context for ${diff.filePath}`, e);
@@ -67,7 +77,7 @@ export class ReviewOrchestrator {
 
         // 6. Return the unified review back to the UI for the engineer to evaluate
         return {
-            id: Math.random().toString(36).substring(7),
+            id: crypto.randomUUID(),
             status: combinedStatus,
             comments: combinedComments.trim(),
             suggestedFixes: allFixes
