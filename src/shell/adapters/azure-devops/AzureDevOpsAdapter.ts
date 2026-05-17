@@ -50,9 +50,12 @@ export class AzureDevOpsAdapter implements IPullRequestProvider {
             repoId,
             filePath,
             this.project,
+            undefined, // scopePath
+            undefined, // recursionLevel
             undefined, // includeContentMetadata
-            undefined, // resolveLfs
-            versionDescriptor
+            undefined, // latestProcessedChange
+            undefined, // download
+            versionDescriptor as any
         );
         
         if (typeof stream === 'string') {
@@ -172,7 +175,15 @@ export class AzureDevOpsAdapter implements IPullRequestProvider {
         return [];
       }
 
-      const diffsResponse = await api.getCommitDiffs(repositoryId, this.project, undefined, 0, 100, undefined, undefined, targetCommit, sourceCommit);
+      const diffsResponse = await api.getCommitDiffs(
+        repositoryId,
+        this.project,
+        undefined, // diffCommonCommit
+        100, // top
+        0, // skip
+        { version: targetCommit, versionType: 2 } as any, // baseVersionDescriptor
+        { version: sourceCommit, versionType: 2 } as any // targetVersionDescriptor
+      );
       
       const fileChanges: FileDiff[] = [];
 

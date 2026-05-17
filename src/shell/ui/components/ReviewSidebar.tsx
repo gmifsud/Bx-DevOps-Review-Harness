@@ -8,7 +8,7 @@ export interface ReviewSidebarProps {
   generatingReview: boolean;
   applyingFix: boolean;
   handleGenerateReview: () => void;
-  handleApplyFix: (filePath: string, newContent: string, commitMessage: string) => void;
+  handleApplyFix: (filePath: string, searchBlock: string, replaceBlock: string, commitMessage: string) => void;
 }
 
 export function ReviewSidebar({
@@ -87,7 +87,7 @@ export function ReviewSidebar({
                       {fix.commitMessage}
                     </div>
                     <button
-                      onClick={() => handleApplyFix(fix.filePath, fix.newContent, fix.commitMessage)}
+                      onClick={() => handleApplyFix(fix.filePath, fix.searchBlock, fix.replaceBlock, fix.commitMessage)}
                       disabled={applyingFix}
                       className="w-full bg-background border border-border hover:border-primary hover:text-primary transition-colors text-[11px] py-1 rounded-sm disabled:opacity-50"
                     >

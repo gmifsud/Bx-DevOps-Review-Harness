@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { AzureDevOpsAdapter } from './src/shell/adapters/azure-devops/AzureDevOpsAdapter';
 import { GoogleAIAdapter } from './src/shell/adapters/google-ai/GoogleAIAdapter';
 import { ReviewOrchestrator } from './src/core/use-cases/ReviewOrchestrator';
+import { ApplyFixUseCase } from './src/core/use-cases/ApplyFixUseCase';
 import { FileDiff } from './src/core/domain/types';
 import * as dotenv from 'dotenv';
 
@@ -53,12 +54,11 @@ app.whenReady().then(() => {
     return reviewOrchestrator.orchestrateReview(repoId, branchName, diffs);
   });
 
-  ipcMain.handle('apply-fix', async (event, repoId: string, sourceBranch: string, filePath: string, newContent: string, commitMessage: string) => {
-     return azureDevOpsAdapter.commitChanges(repoId, sourceBranch, [{
-         filePath, 
-         newContent, 
-         changeType: 'edit'
-     }], commitMessage);
+  // Inside app.whenReady...
+  const applyFixUseCase = new ApplyFixUseCase(azureDevOpsAdapter);
+
+  ipcMain.handle('apply-fix', async (event, repoId: string, sourceBranch: string, filePath: string, searchBlock: string, replaceBlock: string, commitMessage: string) => {
+     return applyFixUseCase.execute(repoId, sourceBranch, { filePath, searchBlock, replaceBlock, commitMessage });
   });
 
   createWindow();

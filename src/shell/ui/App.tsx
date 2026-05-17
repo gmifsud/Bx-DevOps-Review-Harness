@@ -59,14 +59,14 @@ export default function App() {
     }
   };
 
-  const handleApplyFix = async (filePath: string, newContent: string, commitMessage: string) => {
+  const handleApplyFix = async (filePath: string, searchBlock: string, replaceBlock: string, commitMessage: string) => {
     if (!activePR) return;
     try {
       setApplyingFix(true);
       if (!(window as any).electronAPI) {
          throw new Error("Electron API not found.");
       }
-      await (window as any).electronAPI.applyFix(activePR.repositoryId, activePR.sourceBranch, filePath, newContent, commitMessage);
+      await (window as any).electronAPI.applyFix(activePR.repositoryId, activePR.sourceBranch, filePath, searchBlock, replaceBlock, commitMessage);
       
       setLoadingDiff(true);
       const fileChanges = await (window as any).electronAPI.getDiffs(activePR.repositoryId, activePR.id);

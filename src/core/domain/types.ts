@@ -23,6 +23,7 @@ export interface AIReview {
 
 export interface SuggestedFix {
   filePath: string;
-  newContent: string;
+  searchBlock: string;
+  replaceBlock: string;
   commitMessage: string;
 }

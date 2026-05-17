@@ -15,22 +15,28 @@ export class GoogleAIAdapter implements IAIService {
 
     async reviewCodeDiff(diffText: string): Promise<AIReview> {
         try {
-            const prompt = `Review the following code diff and provide feedback. 
-Identify any bugs, code smells, or areas for improvement.
-Format your response as a JSON object with the following schema:
+            const prompt = `Review the following code diff and full file context. 
+Identify any bugs, security vulnerabilities, or code smells.
+
+CRITICAL RULES FOR REMEDIATION:
+Do NOT return the entire file. You must use a targeted "search and replace" block.
+The "searchBlock" must EXACTLY match a contiguous block of text in the original file, including whitespace and indentation, so it can be programmatically replaced.
+
+Format your response as a JSON object with this schema:
 {
   "status": "approved" | "rejected",
-  "comments": "string containing your review comments",
+  "comments": "Detailed review notes",
   "suggestedFixes": [
     {
       "filePath": "string",
-      "newContent": "complete new replacement content for the file",
+      "searchBlock": "string (the exact buggy code to replace)",
+      "replaceBlock": "string (the corrected code)",
       "commitMessage": "string describing the fix"
     }
   ]
 }
 
-Code Diff:
+Context Payload:
 ${diffText}`;
 
             const response = await this.ai.models.generateContent({
